@@ -1,0 +1,24 @@
+# Maven build artifacts
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# IDE
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+.DS_Store
+
+# Environment variables
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# OS
+Thumbs.db

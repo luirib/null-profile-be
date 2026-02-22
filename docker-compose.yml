@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nullprofile-postgres
+    env_file:
+      - .env.local
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-profile}
+      POSTGRES_USER: ${DATABASE_USERNAME:-profile_user}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-profile_pass}
+    ports:
+      - "${DATABASE_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - nullprofile-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME:-profile_user} -d ${DATABASE_NAME:-profile}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nullprofile-backend
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/${DATABASE_NAME:-profile}
+      DATABASE_USERNAME: ${DATABASE_USERNAME:-profile_user}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-profile_pass}
+      DATABASE_MAX_POOL_SIZE: ${DATABASE_MAX_POOL_SIZE:-10}
+      DATABASE_MIN_IDLE: ${DATABASE_MIN_IDLE:-2}
+      SERVER_PORT: 8080
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
+      FLYWAY_ENABLED: ${FLYWAY_ENABLED:-true}
+      FLYWAY_BASELINE_ON_MIGRATE: ${FLYWAY_BASELINE_ON_MIGRATE:-false}
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - nullprofile-network
+    restart: unless-stopped
+
+networks:
+  nullprofile-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
