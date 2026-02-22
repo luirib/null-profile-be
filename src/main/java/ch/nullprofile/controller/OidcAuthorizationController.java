@@ -93,6 +93,30 @@ public class OidcAuthorizationController {
         return new RedirectView("/login");
     }
 
+    /**
+     * Resume authorization flow after WebAuthn authentication
+     */
+    @GetMapping("/authorize/resume")
+    public RedirectView authorizeResume(HttpSession session) {
+        // Check if user is authenticated
+        if (!sessionService.isAuthenticated(session)) {
+            return new RedirectView("/login");
+        }
+
+        // Check if there's an OIDC transaction in session
+        String redirectUri = sessionService.getRedirectUri(session);
+        String state = sessionService.getState(session);
+        
+        if (redirectUri == null || state == null) {
+            return redirectError("http://localhost:3000", "invalid_request", 
+                    "No authorization request in session", "");
+        }
+
+        // Generate auth code and redirect
+        String authCode = sessionService.generateAndStoreAuthCode(session);
+        return new RedirectView(redirectUri + "?code=" + authCode + "&state=" + state);
+    }
+
     private RedirectView redirectError(String redirectUri, String error, 
                                       String errorDescription, String state) {
         String url = redirectUri + "?error=" + error + 

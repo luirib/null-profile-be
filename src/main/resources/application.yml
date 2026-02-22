@@ -54,3 +54,12 @@ oidc:
 platform:
   sub:
     salt: ${PLATFORM_SUB_SALT}
+
+# WebAuthn Configuration
+webauthn:
+  rp:
+    id: ${WEBAUTHN_RP_ID:localhost}
+    name: ${WEBAUTHN_RP_NAME:null-profile}
+  origin: ${WEBAUTHN_ORIGIN:http://localhost:3000}
+  challenge:
+    timeout: ${WEBAUTHN_CHALLENGE_TIMEOUT:300}

@@ -40,6 +40,12 @@ services:
       APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
       FLYWAY_ENABLED: ${FLYWAY_ENABLED:-true}
       FLYWAY_BASELINE_ON_MIGRATE: ${FLYWAY_BASELINE_ON_MIGRATE:-false}
+      OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:8080}
+      PLATFORM_SUB_SALT: ${PLATFORM_SUB_SALT:-change-me-to-a-random-secure-value-in-production}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-null-profile}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-http://localhost:3000}
+      WEBAUTHN_CHALLENGE_TIMEOUT: ${WEBAUTHN_CHALLENGE_TIMEOUT:-300}
     ports:
       - "${SERVER_PORT:-8080}:8080"
     depends_on:
