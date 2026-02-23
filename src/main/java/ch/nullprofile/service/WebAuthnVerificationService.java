@@ -160,11 +160,11 @@ public class WebAuthnVerificationService {
 
         // Find credential
         WebAuthnCredential credential = credentialRepository.findByCredentialId(credentialId)
-                .orElseThrow(() -> new IllegalArgumentException("Credential not found"));
+                .orElseThrow(() -> new IllegalArgumentException("Unknown passkey"));
 
         // Find user
         User user = userRepository.findById(credential.getUserId())
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new IllegalArgumentException("Unknown passkey"));
 
         // Decode base64url inputs
         byte[] clientDataJSONBytes = Base64UrlUtil.decode(clientDataJSON);
