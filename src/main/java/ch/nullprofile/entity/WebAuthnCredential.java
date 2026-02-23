@@ -30,6 +30,9 @@ public class WebAuthnCredential {
     @Column(name = "transports", length = 255)
     private String transports;
 
+    @Column(name = "name", length = 255)
+    private String name;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -97,6 +100,14 @@ public class WebAuthnCredential {
 
     public void setTransports(String transports) {
         this.transports = transports;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
     }
 
     public Instant getCreatedAt() {

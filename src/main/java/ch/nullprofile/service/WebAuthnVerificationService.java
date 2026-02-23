@@ -61,6 +61,7 @@ public class WebAuthnVerificationService {
     @Transactional
     public User verifyRegistrationAndCreateUser(
             String challenge,
+            String name,
             String clientDataJSON,
             String attestationObject,
             String origin) throws ValidationException {
@@ -134,6 +135,7 @@ public class WebAuthnVerificationService {
                     .toString());
         }
         
+        credential.setName(name);
         credential.setCreatedAt(Instant.now());
         credential.setLastUsedAt(Instant.now());
         credentialRepository.save(credential);

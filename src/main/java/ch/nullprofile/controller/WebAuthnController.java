@@ -128,6 +128,7 @@ public class WebAuthnController {
             // Verify and create user
             User user = verificationService.verifyRegistrationAndCreateUser(
                     challenge,
+                    request.name(),
                     request.response().clientDataJSON(),
                     request.response().attestationObject(),
                     properties.getOrigin()
