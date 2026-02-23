@@ -1,9 +1,11 @@
 package ch.nullprofile.dto.webauthn;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record RegistrationOptionsResponse(
         String challenge,
         RelyingPartyInfo rp,
@@ -11,7 +13,8 @@ public record RegistrationOptionsResponse(
         @JsonProperty("pubKeyCredParams") List<PubKeyCredParam> pubKeyCredParams,
         Long timeout,
         String attestation,
-        @JsonProperty("authenticatorSelection") AuthenticatorSelection authenticatorSelection
+        @JsonProperty("authenticatorSelection") AuthenticatorSelection authenticatorSelection,
+        @JsonProperty("excludeCredentials") List<ExcludeCredential> excludeCredentials
 ) {
     public record RelyingPartyInfo(String id, String name) {}
     
@@ -23,4 +26,6 @@ public record RegistrationOptionsResponse(
             String residentKey,
             String userVerification
     ) {}
+    
+    public record ExcludeCredential(String type, String id) {}
 }

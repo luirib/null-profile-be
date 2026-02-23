@@ -95,7 +95,8 @@ public class WebAuthnController {
                 new RegistrationOptionsResponse.AuthenticatorSelection(
                         "required",
                         "preferred"
-                )
+                ),
+                null // No credentials to exclude for initial registration
         );
 
         return ResponseEntity.ok(response);
@@ -128,6 +129,7 @@ public class WebAuthnController {
             // Verify and create user
             User user = verificationService.verifyRegistrationAndCreateUser(
                     challenge,
+                    request.name(),
                     request.response().clientDataJSON(),
                     request.response().attestationObject(),
                     properties.getOrigin()
