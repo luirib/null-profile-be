@@ -253,4 +253,93 @@ public class WebAuthnVerificationService {
 
         return user;
     }
+
+    /**
+     * Verify registration attestation and add credential to existing user
+     */
+    @Transactional
+    public WebAuthnCredential verifyRegistrationAndAddCredential(
+            UUID userId,
+            String challenge,
+            String name,
+            String clientDataJSON,
+            String attestationObject,
+            String origin) throws ValidationException {
+
+        // Verify user exists
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        // Decode base64url inputs
+        byte[] clientDataJSONBytes = Base64UrlUtil.decode(clientDataJSON);
+        byte[] attestationObjectBytes = Base64UrlUtil.decode(attestationObject);
+
+        // Create challenge
+        Challenge challengeObj = new DefaultChallenge(Base64UrlUtil.decode(challenge));
+
+        // Create server property
+        ServerProperty serverProperty = new ServerProperty(
+                Origin.create(origin),
+                properties.getRp().getId(),
+                challengeObj,
+                null
+        );
+
+        // Verify registration
+        RegistrationRequest registrationRequest = new RegistrationRequest(
+                attestationObjectBytes,
+                clientDataJSONBytes
+        );
+
+        RegistrationParameters registrationParameters = new RegistrationParameters(
+                serverProperty,
+                null, // pubKeyCredParams - accept all
+                false, // userVerificationRequired
+                true  // userPresenceRequired
+        );
+
+        RegistrationData registrationData;
+        try {
+            registrationData = webAuthnManager.validate(registrationRequest, registrationParameters);
+        } catch (ValidationException e) {
+            logger.error("WebAuthn registration verification failed", e);
+            throw e;
+        }
+
+        // Create credential
+        WebAuthnCredential credential = new WebAuthnCredential();
+        credential.setId(UUID.randomUUID());
+        credential.setUserId(userId);
+        credential.setCredentialId(Base64UrlUtil.encodeToString(registrationData.getAttestationObject().getAuthenticatorData().getAttestedCredentialData().getCredentialId()));
+        
+        // Store public key in COSE format
+        byte[] publicKeyCose = objectConverter.getCborConverter().writeValueAsBytes(
+                registrationData.getAttestationObject()
+                        .getAuthenticatorData()
+                        .getAttestedCredentialData()
+                        .getCOSEKey()
+        );
+        credential.setPublicKeyCose(Base64.getEncoder().encodeToString(publicKeyCose));
+        
+        credential.setSignCount(registrationData.getAttestationObject().getAuthenticatorData().getSignCount());
+        
+        // Store AAGUID if available
+        if (registrationData.getAttestationObject().getAuthenticatorData().getAttestedCredentialData().getAaguid() != null) {
+            credential.setAaguid(registrationData.getAttestationObject()
+                    .getAuthenticatorData()
+                    .getAttestedCredentialData()
+                    .getAaguid()
+                    .toString());
+        }
+        
+        credential.setName(name);
+        credential.setCreatedAt(Instant.now());
+        credential.setLastUsedAt(Instant.now());
+        credentialRepository.save(credential);
+
+        logger.info("Successfully added credential to user: userId={}, credentialId={}", 
+                userId, credential.getCredentialId());
+
+        return credential;
+    }
 }

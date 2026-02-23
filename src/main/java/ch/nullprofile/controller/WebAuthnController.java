@@ -95,7 +95,8 @@ public class WebAuthnController {
                 new RegistrationOptionsResponse.AuthenticatorSelection(
                         "required",
                         "preferred"
-                )
+                ),
+                null // No credentials to exclude for initial registration
         );
 
         return ResponseEntity.ok(response);
