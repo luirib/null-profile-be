@@ -55,6 +55,7 @@ public class RelyingPartyService {
                 .filter(rp -> rp.getCreatedByUserId().equals(userId))
                 .map(rp -> new RelyingPartySummary(
                         rp.getId(),
+                        rp.getRpId(),
                         rp.getRpName(),
                         rp.getCreatedAt().toString()
                 ))
@@ -75,6 +76,7 @@ public class RelyingPartyService {
                     
                     return new RelyingPartyDetail(
                             rp.getId(),
+                            rp.getRpId(),
                             rp.getRpName(),
                             rp.getSectorId(),
                             uris,
@@ -121,6 +123,7 @@ public class RelyingPartyService {
 
         return new RelyingPartyDetail(
                 rp.getId(),
+                rp.getRpId(),
                 rp.getRpName(),
                 rp.getSectorId(),
                 request.redirectUris(),
@@ -182,6 +185,7 @@ public class RelyingPartyService {
 
                     return new RelyingPartyDetail(
                             rp.getId(),
+                            rp.getRpId(),
                             rp.getRpName(),
                             rp.getSectorId(),
                             uris,

@@ -49,6 +49,19 @@ logging:
 # OIDC Provider Configuration
 oidc:
   issuer: ${OIDC_ISSUER:http://localhost:8080}
+  security:
+    # Allow http://localhost redirect URIs for development
+    # Set to false in production to enforce https-only (except localhost)
+    allowHttpRedirectUrisForLocalhost: ${OIDC_ALLOW_HTTP_LOCALHOST:true}
+    # Authorization code validity in seconds (default: 5 minutes)
+    authCodeValiditySeconds: ${OIDC_AUTH_CODE_VALIDITY:300}
+    # Session timeout in seconds (default: 30 minutes)
+    sessionTimeoutSeconds: ${OIDC_SESSION_TIMEOUT:1800}
+    # Maximum parameter lengths for security
+    maxStateLength: ${OIDC_MAX_STATE_LENGTH:1024}
+    maxNonceLength: ${OIDC_MAX_NONCE_LENGTH:1024}
+    minCodeChallengeLength: ${OIDC_MIN_CODE_CHALLENGE_LENGTH:43}
+    maxCodeChallengeLength: ${OIDC_MAX_CODE_CHALLENGE_LENGTH:128}
 
 # Platform Configuration
 platform:
