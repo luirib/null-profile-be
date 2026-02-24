@@ -13,6 +13,7 @@ import com.webauthn4j.validator.exception.ValidationException;
 import jakarta.servlet.http.HttpSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -28,6 +29,9 @@ import java.util.List;
 public class WebAuthnController {
 
     private static final Logger logger = LoggerFactory.getLogger(WebAuthnController.class);
+
+    @Value("${oidc.issuer}")
+    private String issuer;
 
     private final WebAuthnProperties properties;
     private final ChallengeService challengeService;
@@ -136,7 +140,7 @@ public class WebAuthnController {
             );
 
             // Set authenticated user in session
-            sessionService.setAuthenticatedUser(session, user.getId());
+            sessionService.setAuthenticatedUserId(session, user.getId());
 
             // Cleanup registration session data
             challengeService.cleanupRegistrationSession(session);
@@ -144,22 +148,37 @@ public class WebAuthnController {
             logger.info("Registration successful for userId={}", user.getId());
 
             // Check if there's an OIDC transaction to continue
-            if (sessionService.isAuthenticated(session) && sessionService.getRpId(session) != null) {
-                return ResponseEntity.ok(WebAuthnResponse.successWithRedirect("/authorize/resume"));
+            var txn = sessionService.getTransaction(session);
+            logger.info("Checking for OIDC transaction after registration: present={}, authenticated={}", 
+                    txn.isPresent(), sessionService.isAuthenticated(session));
+            if (txn.isPresent()) {
+                logger.info("OIDC transaction found after registration, redirecting to /authorize/resume: txnId={}", 
+                        txn.get().txnId());
+            }
+            if (sessionService.isAuthenticated(session) && txn.isPresent()) {
+                String resumeUrl = issuer + "/authorize/resume";
+                logger.info("Returning redirect URL after registration: {}", resumeUrl);
+                return ResponseEntity.ok(WebAuthnResponse.successWithRedirect(resumeUrl));
             }
 
             return ResponseEntity.ok(WebAuthnResponse.success());
 
         } catch (ValidationException e) {
             logger.error("Registration verification failed", e);
+            // Clean up session state on failure to allow retry
+            challengeService.cleanupRegistrationSession(session);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(WebAuthnResponse.error("verification_failed", e.getMessage()));
         } catch (IllegalArgumentException e) {
             logger.warn("Registration failed: {}", e.getMessage());
+            // Clean up session state on failure to allow retry
+            challengeService.cleanupRegistrationSession(session);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(WebAuthnResponse.error("registration_failed", e.getMessage()));
         } catch (Exception e) {
             logger.error("Registration verification error", e);
+            // Clean up session state on failure to allow retry
+            challengeService.cleanupRegistrationSession(session);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(WebAuthnResponse.error("internal_error", "An unexpected error occurred"));
         }
@@ -226,7 +245,7 @@ public class WebAuthnController {
             );
 
             // Set authenticated user in session
-            sessionService.setAuthenticatedUser(session, user.getId());
+            sessionService.setAuthenticatedUserId(session, user.getId());
 
             // Cleanup authentication session data
             challengeService.cleanupAuthenticationSession(session);
@@ -234,22 +253,37 @@ public class WebAuthnController {
             logger.info("Authentication successful for userId={}", user.getId());
 
             // Check if there's an OIDC transaction to continue
-            if (sessionService.isAuthenticated(session) && sessionService.getRpId(session) != null) {
-                return ResponseEntity.ok(WebAuthnResponse.successWithRedirect("/authorize/resume"));
+            var txn = sessionService.getTransaction(session);
+            logger.info("Checking for OIDC transaction: present={}, authenticated={}", 
+                    txn.isPresent(), sessionService.isAuthenticated(session));
+            if (txn.isPresent()) {
+                logger.info("OIDC transaction found, redirecting to /authorize/resume: txnId={}", 
+                        txn.get().txnId());
+            }
+            if (sessionService.isAuthenticated(session) && txn.isPresent()) {
+                String resumeUrl = issuer + "/authorize/resume";
+                logger.info("Returning redirect URL: {}", resumeUrl);
+                return ResponseEntity.ok(WebAuthnResponse.successWithRedirect(resumeUrl));
             }
 
             return ResponseEntity.ok(WebAuthnResponse.success());
 
         } catch (ValidationException e) {
             logger.error("Authentication verification failed", e);
+            // Clean up session state on failure to allow retry
+            challengeService.cleanupAuthenticationSession(session);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(WebAuthnResponse.error("verification_failed", e.getMessage()));
         } catch (IllegalArgumentException e) {
             logger.warn("Authentication failed: {}", e.getMessage());
+            // Clean up session state on failure to allow retry
+            challengeService.cleanupAuthenticationSession(session);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(WebAuthnResponse.error("authentication_failed", e.getMessage()));
         } catch (Exception e) {
             logger.error("Authentication verification error", e);
+            // Clean up session state on failure to allow retry
+            challengeService.cleanupAuthenticationSession(session);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(WebAuthnResponse.error("internal_error", "An unexpected error occurred"));
         }

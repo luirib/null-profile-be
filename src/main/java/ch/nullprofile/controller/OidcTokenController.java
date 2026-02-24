@@ -15,8 +15,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.UUID;
-
 @RestController
 public class OidcTokenController {
 
@@ -51,39 +49,38 @@ public class OidcTokenController {
                     "Only grant_type=authorization_code is supported");
         }
 
-        // Validate session has transaction data
-        String sessionRpId = sessionService.getRpId(session);
-        if (sessionRpId == null || !sessionRpId.equals(clientId)) {
+        // Validate and consume auth code (session-independent lookup)
+        var txnOpt = sessionService.validateAndConsumeAuthCode(code);
+        if (txnOpt.isEmpty()) {
             return errorResponse(HttpStatus.BAD_REQUEST, "invalid_grant", 
                     "Invalid or expired authorization code");
         }
 
-        // Validate and consume auth code
-        if (!sessionService.validateAndConsumeAuthCode(session, code)) {
+        var txn = txnOpt.get();
+
+        // Validate client_id matches transaction
+        if (!txn.rpId().equals(clientId)) {
             return errorResponse(HttpStatus.BAD_REQUEST, "invalid_grant", 
                     "Invalid or expired authorization code");
         }
 
         // Validate PKCE
-        if (!sessionService.validatePkce(session, codeVerifier)) {
+        if (!sessionService.validatePkce(txn, codeVerifier)) {
             return errorResponse(HttpStatus.BAD_REQUEST, "invalid_grant", 
                     "Invalid code_verifier");
         }
 
         // Validate redirect_uri matches
-        String sessionRedirectUri = sessionService.getRedirectUri(session);
-        if (!redirectUri.equals(sessionRedirectUri)) {
+        if (!redirectUri.equals(txn.redirectUri())) {
             return errorResponse(HttpStatus.BAD_REQUEST, "invalid_grant", 
                     "redirect_uri does not match");
         }
 
-        // Get user ID from session
-        String userIdStr = sessionService.getUserId(session);
-        if (userIdStr == null) {
+        // Check transaction is authenticated
+        if (txn.authenticatedUserId() == null) {
             return errorResponse(HttpStatus.BAD_REQUEST, "invalid_grant", 
                     "User not authenticated");
         }
-        UUID userId = UUID.fromString(userIdStr);
 
         // Get relying party for sectorId
         RelyingParty relyingParty = relyingPartyService.findByRpId(clientId)
@@ -94,13 +91,12 @@ public class OidcTokenController {
         }
 
         // Generate pairwise sub
-        String sub = pairwiseSubjectService.generatePairwiseSub(userId, relyingParty.getSectorId());
+        String sub = pairwiseSubjectService.generatePairwiseSub(
+                txn.authenticatedUserId(), 
+                relyingParty.getSectorId());
 
-        // Get nonce from session
-        String nonce = sessionService.getNonce(session);
-
-        // Generate ID token
-        String idToken = jwtService.generateIdToken(sub, clientId, nonce);
+        // Generate ID token with nonce from transaction
+        String idToken = jwtService.generateIdToken(sub, clientId, txn.nonce());
 
         return ResponseEntity.ok(new TokenResponse(idToken));
     }

@@ -1,127 +1,294 @@
 package ch.nullprofile.controller;
 
-import ch.nullprofile.entity.RelyingParty;
+import ch.nullprofile.dto.*;
+import ch.nullprofile.service.OidcAuthorizationValidationService;
 import ch.nullprofile.service.OidcSessionTransactionService;
-import ch.nullprofile.service.RelyingPartyService;
 import jakarta.servlet.http.HttpSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.view.RedirectView;
+import org.springframework.web.util.UriComponentsBuilder;
 
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * OIDC Authorization Endpoint
+ * Implements OAuth 2.0 Authorization Code Flow with PKCE
+ */
 @Controller
 public class OidcAuthorizationController {
+
+    private static final Logger logger = LoggerFactory.getLogger(OidcAuthorizationController.class);
 
     @Value("${oidc.issuer}")
     private String issuer;
 
-    private final RelyingPartyService relyingPartyService;
+    @Value("${webauthn.origin:http://localhost:3000}")
+    private String frontendOrigin;
+
+    private final OidcAuthorizationValidationService validationService;
     private final OidcSessionTransactionService sessionService;
 
     public OidcAuthorizationController(
-            RelyingPartyService relyingPartyService,
+            OidcAuthorizationValidationService validationService,
             OidcSessionTransactionService sessionService) {
-        this.relyingPartyService = relyingPartyService;
+        this.validationService = validationService;
         this.sessionService = sessionService;
     }
 
+    /**
+     * OIDC Authorization Endpoint
+     * GET /authorize
+     * 
+     * Validates authorization request and initiates authorization flow
+     */
     @GetMapping("/authorize")
-    public RedirectView authorize(
-            @RequestParam("response_type") String responseType,
-            @RequestParam("client_id") String clientId,
-            @RequestParam("redirect_uri") String redirectUri,
-            @RequestParam("scope") String scope,
-            @RequestParam("state") String state,
-            @RequestParam("nonce") String nonce,
+    public Object authorize(
+            @RequestParam(value = "response_type", required = false) String responseType,
+            @RequestParam(value = "client_id", required = false) String clientId,
+            @RequestParam(value = "redirect_uri", required = false) String redirectUri,
+            @RequestParam(value = "scope", required = false) String scope,
+            @RequestParam(value = "state", required = false) String state,
+            @RequestParam(value = "nonce", required = false) String nonce,
             @RequestParam(value = "code_challenge", required = false) String codeChallenge,
             @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
+            @RequestParam(value = "prompt", required = false) String prompt,
             HttpSession session) {
 
-        // Validate response_type
-        if (!"code".equals(responseType)) {
-            return redirectError(redirectUri, "unsupported_response_type", 
-                    "Only response_type=code is supported", state);
+        logger.info("Authorization request: client_id={}, redirect_uri={}, prompt={}", 
+                clientId, redirectUri != null ? getRedirectUriHost(redirectUri) : null, prompt);
+
+        // Build request object
+        OidcAuthorizationRequest request = new OidcAuthorizationRequest(
+                responseType,
+                clientId,
+                redirectUri,
+                scope,
+                state,
+                nonce,
+                codeChallenge,
+                codeChallengeMethod,
+                prompt
+        );
+
+        // Validate request
+        OidcAuthorizationValidationResult validationResult = validationService.validate(request);
+
+        // Handle validation errors
+        if (validationResult instanceof OidcAuthorizationValidationResult.Invalid invalid) {
+            logger.warn("Authorization validation failed: error={}, description={}", 
+                    invalid.error(), invalid.errorDescription());
+            return handleValidationError(invalid);
         }
 
-        // Validate scope
-        if (!"openid".equals(scope)) {
-            return redirectError(redirectUri, "invalid_scope", 
-                    "Only scope=openid is supported", state);
+        // Validation successful
+        OidcAuthorizationValidationResult.Valid valid = (OidcAuthorizationValidationResult.Valid) validationResult;
+        OidcAuthorizationRequest validatedRequest = valid.request();
+
+        // Check if prompt=login (force re-authentication)
+        boolean forceLogin = validatedRequest.requiresLogin();
+        if (forceLogin) {
+            logger.info("prompt=login: clearing authenticated user from session");
+            sessionService.clearAuthenticatedUser(session);
         }
-
-        // Validate code_challenge is present
-        if (codeChallenge == null || codeChallenge.isBlank()) {
-            return redirectError(redirectUri, "invalid_request", 
-                    "code_challenge is required", state);
-        }
-
-        // Validate code_challenge_method
-        if (!"S256".equals(codeChallengeMethod)) {
-            return redirectError(redirectUri, "invalid_request", 
-                    "Only code_challenge_method=S256 is supported", state);
-        }
-
-        // Lookup relying party (client)
-        RelyingParty relyingParty = relyingPartyService.findByRpId(clientId)
-                .orElse(null);
-
-        if (relyingParty == null) {
-            return redirectError(redirectUri, "unauthorized_client", 
-                    "Unknown client_id", state);
-        }
-
-        // Validate redirect_uri (exact match)
-        if (!relyingPartyService.isRedirectUriValid(relyingParty, redirectUri)) {
-            return redirectError(redirectUri, "invalid_request", 
-                    "Invalid redirect_uri", state);
-        }
-
-        // Store transaction in session
-        sessionService.storeAuthorizationRequest(
-                session, clientId, redirectUri, codeChallenge, 
-                codeChallengeMethod, nonce, state);
 
         // Check if user is already authenticated
-        if (sessionService.isAuthenticated(session)) {
-            // Generate auth code and redirect
+        Optional<UUID> authenticatedUserId = sessionService.getAuthenticatedUserId(session);
+        boolean needsAuthentication = authenticatedUserId.isEmpty();
+
+        // Create transaction in session
+        OidcTransaction txn = sessionService.createTransaction(
+                session,
+                validatedRequest.clientId(),
+                validatedRequest.redirectUri(),
+                validatedRequest.scope(),
+                validatedRequest.state(),
+                validatedRequest.nonce(),
+                validatedRequest.codeChallenge(),
+                validatedRequest.codeChallengeMethod(),
+                needsAuthentication || forceLogin
+        );
+
+        // If already authenticated and no force login, proceed directly
+        if (!needsAuthentication && !forceLogin) {
+            logger.info("User already authenticated, proceeding to code issuance: txnId={}, userId={}", 
+                    txn.txnId(), authenticatedUserId.get());
+            
+            // Authenticate the transaction with the existing user
+            sessionService.authenticateTransaction(session, authenticatedUserId.get());
+            
+            // Generate authorization code
             String authCode = sessionService.generateAndStoreAuthCode(session);
-            return new RedirectView(redirectUri + "?code=" + authCode + "&state=" + state);
+            
+            // Redirect to redirect_uri with code
+            return buildSuccessRedirect(validatedRequest.redirectUri(), authCode, validatedRequest.state());
         }
 
-        // Redirect to login
-        return new RedirectView("/login");
+        // Need authentication - redirect to login
+        logger.info("Redirecting to login: txnId={}, authnRequired={}", txn.txnId(), needsAuthentication);
+        String loginUrl = UriComponentsBuilder.fromUriString(frontendOrigin + "/login")
+                .queryParam("txn", txn.txnId())
+                .toUriString();
+        return new RedirectView(loginUrl);
     }
 
     /**
-     * Resume authorization flow after WebAuthn authentication
+     * Resume authorization flow after authentication
+     * GET /authorize/resume
+     * 
+     * Called after user completes WebAuthn authentication
      */
     @GetMapping("/authorize/resume")
-    public RedirectView authorizeResume(HttpSession session) {
+    public Object authorizeResume(
+            @RequestParam(value = "txn", required = false) String txnId,
+            HttpSession session) {
+
+        logger.info("Authorization resume requested: txnId={}", txnId);
+
         // Check if user is authenticated
-        if (!sessionService.isAuthenticated(session)) {
-            return new RedirectView("/login");
+        Optional<UUID> authenticatedUserId = sessionService.getAuthenticatedUserId(session);
+        if (authenticatedUserId.isEmpty()) {
+            logger.warn("Resume requested but session not authenticated");
+            // Redirect back to login
+            String loginUrl = frontendOrigin + "/login";
+            if (txnId != null) {
+                loginUrl += "?txn=" + txnId;
+            }
+            return new RedirectView(loginUrl);
         }
 
-        // Check if there's an OIDC transaction in session
-        String redirectUri = sessionService.getRedirectUri(session);
-        String state = sessionService.getState(session);
-        
-        if (redirectUri == null || state == null) {
-            return redirectError("http://localhost:3000", "invalid_request", 
-                    "No authorization request in session", "");
+        // Get transaction from session
+        Optional<OidcTransaction> txnOpt = sessionService.getTransaction(session);
+        if (txnOpt.isEmpty()) {
+            logger.error("Resume requested but no transaction in session");
+            return handleServerError("No authorization request in session", null);
         }
 
-        // Generate auth code and redirect
+        OidcTransaction txn = txnOpt.get();
+
+        // Verify transaction ID matches (if provided)
+        if (txnId != null && !txnId.equals(txn.txnId())) {
+            logger.warn("Transaction ID mismatch: expected={}, provided={}", txn.txnId(), txnId);
+            return handleServerError("Transaction ID mismatch", txn.redirectUri());
+        }
+
+        // Check transaction hasn't expired (session timeout)
+        // (Session management handles this automatically, but we can add extra validation)
+
+        // Authenticate the transaction
+        OidcTransaction authenticatedTxn = sessionService.authenticateTransaction(session, authenticatedUserId.get());
+
+        logger.info("Transaction authenticated, issuing code: txnId={}, userId={}", 
+                authenticatedTxn.txnId(), authenticatedUserId.get());
+
+        // Generate authorization code
         String authCode = sessionService.generateAndStoreAuthCode(session);
-        return new RedirectView(redirectUri + "?code=" + authCode + "&state=" + state);
+
+        // Redirect to redirect_uri with code
+        return buildSuccessRedirect(
+                authenticatedTxn.redirectUri(), 
+                authCode, 
+                authenticatedTxn.state());
     }
 
-    private RedirectView redirectError(String redirectUri, String error, 
-                                      String errorDescription, String state) {
-        String url = redirectUri + "?error=" + error + 
-                     "&error_description=" + errorDescription.replace(" ", "+") +
-                     "&state=" + state;
-        return new RedirectView(url);
+    /**
+     * Handle validation error
+     */
+    private Object handleValidationError(OidcAuthorizationValidationResult.Invalid invalid) {
+        // If we can safely redirect to the redirect_uri, do so with error
+        if (invalid.canRedirect()) {
+            return buildErrorRedirect(
+                    invalid.redirectUri(), 
+                    invalid.error(), 
+                    invalid.errorDescription(), 
+                    invalid.state());
+        }
+
+        // Cannot redirect safely - return error as plain response
+        // (In production, this should show a user-friendly error page)
+        OidcErrorResponse errorResponse = new OidcErrorResponse(
+                invalid.error(), 
+                invalid.errorDescription());
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(errorResponse);
+    }
+
+    /**
+     * Handle server error
+     */
+    private Object handleServerError(String description, String redirectUri) {
+        logger.error("Server error during authorization: {}", description);
+        
+        if (redirectUri != null) {
+            return buildErrorRedirect(redirectUri, "server_error", 
+                    "An internal error occurred", null);
+        }
+
+        OidcErrorResponse errorResponse = new OidcErrorResponse(
+                "server_error", 
+                "An internal error occurred");
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(errorResponse);
+    }
+
+    /**
+     * Build successful redirect with authorization code
+     */
+    private RedirectView buildSuccessRedirect(String redirectUri, String code, String state) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(redirectUri)
+                .queryParam("code", code);
+        
+        if (state != null && !state.isBlank()) {
+            builder.queryParam("state", state);
+        }
+
+        logger.info("Authorization successful, redirecting to: {}", getRedirectUriHost(redirectUri));
+        return new RedirectView(builder.toUriString());
+    }
+
+    /**
+     * Build error redirect
+     */
+    private RedirectView buildErrorRedirect(
+            String redirectUri, 
+            String error, 
+            String errorDescription, 
+            String state) {
+        
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(redirectUri)
+                .queryParam("error", error);
+        
+        if (errorDescription != null) {
+            builder.queryParam("error_description", errorDescription);
+        }
+        
+        if (state != null && !state.isBlank()) {
+            builder.queryParam("state", state);
+        }
+
+        return new RedirectView(builder.toUriString());
+    }
+
+    /**
+     * Extract host from redirect URI for logging (don't log full URI with sensitive params)
+     */
+    private String getRedirectUriHost(String redirectUri) {
+        if (redirectUri == null) {
+            return null;
+        }
+        try {
+            return UriComponentsBuilder.fromUriString(redirectUri).build().getHost();
+        } catch (Exception e) {
+            return "invalid-uri";
+        }
     }
 }

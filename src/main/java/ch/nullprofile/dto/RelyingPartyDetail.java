@@ -5,6 +5,7 @@ import java.util.UUID;
 
 public record RelyingPartyDetail(
         UUID id,
+        String rpId,
         String name,
         String sectorId,
         List<String> redirectUris,
