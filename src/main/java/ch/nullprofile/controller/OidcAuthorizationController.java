@@ -133,7 +133,7 @@ public class OidcAuthorizationController {
 
         // Need authentication - redirect to login
         logger.info("Redirecting to login: txnId={}, authnRequired={}", txn.txnId(), needsAuthentication);
-        String loginUrl = UriComponentsBuilder.fromUriString(frontendOrigin + "/login")
+        String loginUrl = UriComponentsBuilder.fromUriString(frontendOrigin + "/oidc/login")
                 .queryParam("txn", txn.txnId())
                 .toUriString();
         return new RedirectView(loginUrl);
@@ -157,7 +157,7 @@ public class OidcAuthorizationController {
         if (authenticatedUserId.isEmpty()) {
             logger.warn("Resume requested but session not authenticated");
             // Redirect back to login
-            String loginUrl = frontendOrigin + "/login";
+            String loginUrl = frontendOrigin + "/oidc/login";
             if (txnId != null) {
                 loginUrl += "?txn=" + txnId;
             }
