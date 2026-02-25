@@ -22,18 +22,21 @@ public class BillingProperties {
 
     /**
      * Default currency for payments (ISO 4217 currency code)
+     * Configured via BILLING_CURRENCY environment variable
      */
-    private String currency = "eur";
+    private String currency;
 
     /**
      * URL to redirect to after successful payment
+     * Configured via BILLING_SUCCESS_URL environment variable
      */
-    private String successUrl = "http://localhost:8080/billing/success";
+    private String successUrl;
 
     /**
      * URL to redirect to when payment is cancelled
+     * Configured via BILLING_CANCEL_URL environment variable
      */
-    private String cancelUrl = "http://localhost:8080/billing/cancel";
+    private String cancelUrl;
 
     public enum Mode {
         DONATION,
