@@ -76,3 +76,15 @@ webauthn:
   origin: ${WEBAUTHN_ORIGIN:http://localhost:3000}
   challenge:
     timeout: ${WEBAUTHN_CHALLENGE_TIMEOUT:300}
+
+# Billing Configuration
+billing:
+  mode: ${BILLING_MODE:donation}
+  currency: ${BILLING_CURRENCY:eur}
+  success-url: ${BILLING_SUCCESS_URL:http://localhost:8080/billing/success}
+  cancel-url: ${BILLING_CANCEL_URL:http://localhost:8080/billing/cancel}
+
+# Stripe Configuration
+stripe:
+  secret-key: ${STRIPE_SECRET_KEY:}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
