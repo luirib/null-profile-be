@@ -148,18 +148,22 @@ public class WebAuthnController {
             logger.info("Registration successful for userId={}", user.getId());
 
             // Check if there's an OIDC transaction to continue
+            // Only redirect if this registration was initiated for an OIDC flow (txn provided)
             var txn = sessionService.getTransaction(session);
-            logger.info("Checking for OIDC transaction after registration: present={}, authenticated={}", 
-                    txn.isPresent(), sessionService.isAuthenticated(session));
-            if (txn.isPresent()) {
-                logger.info("OIDC transaction found after registration, redirecting to /authorize/resume: txnId={}", 
+            logger.info("Checking for OIDC transaction after registration: present={}, authenticated={}, requestTxn={}", 
+                    txn.isPresent(), sessionService.isAuthenticated(session), request.txn());
+            
+            // Only redirect to OIDC flow if the registration was initiated WITH a txn parameter
+            // This prevents redirecting to stale OIDC transactions from other tabs
+            if (sessionService.isAuthenticated(session) && txn.isPresent() && request.txn() != null && !request.txn().isEmpty()) {
+                logger.info("OIDC transaction found and registration initiated with txn, redirecting to /authorize/resume: txnId={}", 
                         txn.get().txnId());
-            }
-            if (sessionService.isAuthenticated(session) && txn.isPresent()) {
                 String resumeUrl = issuer + "/authorize/resume";
                 logger.info("Returning redirect URL after registration: {}", resumeUrl);
                 return ResponseEntity.ok(WebAuthnResponse.successWithRedirect(resumeUrl));
             }
+            
+            logger.info("Registration completed without OIDC redirect (direct login)");
 
             return ResponseEntity.ok(WebAuthnResponse.success());
 
@@ -253,18 +257,22 @@ public class WebAuthnController {
             logger.info("Authentication successful for userId={}", user.getId());
 
             // Check if there's an OIDC transaction to continue
+            // Only redirect if this authentication was initiated for an OIDC flow (txn provided)
             var txn = sessionService.getTransaction(session);
-            logger.info("Checking for OIDC transaction: present={}, authenticated={}", 
-                    txn.isPresent(), sessionService.isAuthenticated(session));
-            if (txn.isPresent()) {
-                logger.info("OIDC transaction found, redirecting to /authorize/resume: txnId={}", 
+            logger.info("Checking for OIDC transaction: present={}, authenticated={}, requestTxn={}", 
+                    txn.isPresent(), sessionService.isAuthenticated(session), request.txn());
+            
+            // Only redirect to OIDC flow if the authentication was initiated WITH a txn parameter
+            // This prevents redirecting to stale OIDC transactions from other tabs
+            if (sessionService.isAuthenticated(session) && txn.isPresent() && request.txn() != null && !request.txn().isEmpty()) {
+                logger.info("OIDC transaction found and authentication initiated with txn, redirecting to /authorize/resume: txnId={}", 
                         txn.get().txnId());
-            }
-            if (sessionService.isAuthenticated(session) && txn.isPresent()) {
                 String resumeUrl = issuer + "/authorize/resume";
                 logger.info("Returning redirect URL: {}", resumeUrl);
                 return ResponseEntity.ok(WebAuthnResponse.successWithRedirect(resumeUrl));
             }
+            
+            logger.info("Authentication completed without OIDC redirect (direct login)");
 
             return ResponseEntity.ok(WebAuthnResponse.success());
 

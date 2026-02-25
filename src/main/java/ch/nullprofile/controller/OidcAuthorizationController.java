@@ -1,8 +1,11 @@
 package ch.nullprofile.controller;
 
 import ch.nullprofile.dto.*;
+import ch.nullprofile.entity.RelyingParty;
 import ch.nullprofile.service.OidcAuthorizationValidationService;
 import ch.nullprofile.service.OidcSessionTransactionService;
+import ch.nullprofile.service.RelyingPartyService;
+import ch.nullprofile.service.UsageMeteringService;
 import jakarta.servlet.http.HttpSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.view.RedirectView;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -35,12 +39,18 @@ public class OidcAuthorizationController {
 
     private final OidcAuthorizationValidationService validationService;
     private final OidcSessionTransactionService sessionService;
+    private final RelyingPartyService relyingPartyService;
+    private final UsageMeteringService usageMeteringService;
 
     public OidcAuthorizationController(
             OidcAuthorizationValidationService validationService,
-            OidcSessionTransactionService sessionService) {
+            OidcSessionTransactionService sessionService,
+            RelyingPartyService relyingPartyService,
+            UsageMeteringService usageMeteringService) {
         this.validationService = validationService;
         this.sessionService = sessionService;
+        this.relyingPartyService = relyingPartyService;
+        this.usageMeteringService = usageMeteringService;
     }
 
     /**
@@ -124,6 +134,9 @@ public class OidcAuthorizationController {
             // Authenticate the transaction with the existing user
             sessionService.authenticateTransaction(session, authenticatedUserId.get());
             
+            // Record successful authentication in usage metrics
+            recordAuthenticationMetrics(validatedRequest.clientId(), authenticatedUserId.get());
+            
             // Generate authorization code
             String authCode = sessionService.generateAndStoreAuthCode(session);
             
@@ -187,6 +200,9 @@ public class OidcAuthorizationController {
 
         logger.info("Transaction authenticated, issuing code: txnId={}, userId={}", 
                 authenticatedTxn.txnId(), authenticatedUserId.get());
+
+        // Record successful authentication in usage metrics
+        recordAuthenticationMetrics(authenticatedTxn.rpId(), authenticatedUserId.get());
 
         // Generate authorization code
         String authCode = sessionService.generateAndStoreAuthCode(session);
@@ -289,6 +305,33 @@ public class OidcAuthorizationController {
             return UriComponentsBuilder.fromUriString(redirectUri).build().getHost();
         } catch (Exception e) {
             return "invalid-uri";
+        }
+    }
+
+    /**
+     * Record successful authentication in usage metrics
+     * Tracks MAU and authentication count per relying party per month
+     */
+    private void recordAuthenticationMetrics(String rpId, UUID userId) {
+        try {
+            // Lookup relying party to get UUID
+            RelyingParty relyingParty = relyingPartyService.findByRpId(rpId).orElse(null);
+            if (relyingParty == null) {
+                logger.warn("Cannot record metrics: relying party not found: rpId={}", rpId);
+                return;
+            }
+
+            // Record the authentication event
+            usageMeteringService.recordSuccessfulAuthentication(
+                    relyingParty.getId(), 
+                    userId, 
+                    Instant.now());
+
+            logger.debug("Recorded authentication metrics: rpId={}, userId={}", rpId, userId);
+
+        } catch (Exception e) {
+            // Log error but don't fail the authentication flow
+            logger.error("Failed to record authentication metrics: rpId={}, userId={}", rpId, userId, e);
         }
     }
 }
