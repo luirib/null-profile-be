@@ -81,24 +81,3 @@ CREATE INDEX idx_billing_events_stripe_event_id ON billing_events(stripe_event_i
 CREATE INDEX idx_billing_events_type ON billing_events(type);
 CREATE INDEX idx_billing_events_received_at ON billing_events(received_at DESC);
 CREATE INDEX idx_billing_events_processed_at ON billing_events(processed_at) WHERE processed_at IS NULL;
-
--- Function to auto-update updated_at timestamp
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = now();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Trigger for billing_customers.updated_at
-CREATE TRIGGER trigger_billing_customers_updated_at
-    BEFORE UPDATE ON billing_customers
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
--- Trigger for billing_subscriptions.updated_at
-CREATE TRIGGER trigger_billing_subscriptions_updated_at
-    BEFORE UPDATE ON billing_subscriptions
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();

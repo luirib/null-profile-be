@@ -25,6 +25,7 @@ spring:
   flyway:
     enabled: ${FLYWAY_ENABLED:true}
     baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:false}
+    validate-on-migrate: false
     locations: ${FLYWAY_LOCATIONS:classpath:db/migration}
 
 server:

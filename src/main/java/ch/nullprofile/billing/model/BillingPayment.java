@@ -1,6 +1,7 @@
 package ch.nullprofile.billing.model;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.CreationTimestamp;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -55,13 +56,9 @@ public class BillingPayment {
     @Column(name = "paid_at")
     private Instant paidAt;
 
+    @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
-
-    @PrePersist
-    protected void onCreate() {
-        createdAt = Instant.now();
-    }
 
     // Constructors
 

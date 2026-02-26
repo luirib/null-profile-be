@@ -1,6 +1,7 @@
 package ch.nullprofile.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.CreationTimestamp;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -33,16 +34,12 @@ public class WebAuthnCredential {
     @Column(name = "name", length = 255)
     private String name;
 
+    @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     @Column(name = "last_used_at")
     private Instant lastUsedAt;
-
-    @PrePersist
-    protected void onCreate() {
-        createdAt = Instant.now();
-    }
 
     // Getters and Setters
 

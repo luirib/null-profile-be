@@ -1,6 +1,7 @@
 package ch.nullprofile.billing.model;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import java.time.Instant;
@@ -26,6 +27,7 @@ public class BillingEvent {
     @Column(name = "type", nullable = false)
     private String type;
 
+    @CreationTimestamp
     @Column(name = "received_at", nullable = false, updatable = false)
     private Instant receivedAt;
 
@@ -35,11 +37,6 @@ public class BillingEvent {
     @Column(name = "payload", columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
     private String payload;
-
-    @PrePersist
-    protected void onCreate() {
-        receivedAt = Instant.now();
-    }
 
     // Constructors
 

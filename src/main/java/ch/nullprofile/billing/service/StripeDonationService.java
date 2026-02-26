@@ -93,6 +93,12 @@ public class StripeDonationService {
                                 .setQuantity(1L)
                                 .build()
                 )
+                .setPaymentIntentData(
+                        SessionCreateParams.PaymentIntentData.builder()
+                                .putMetadata("userId", userId.toString())
+                                .putMetadata("type", "donation")
+                                .build()
+                )
                 .putMetadata("userId", userId.toString())
                 .putMetadata("type", "donation")
                 .build();
