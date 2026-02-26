@@ -1,6 +1,7 @@
 package ch.nullprofile.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.CreationTimestamp;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -18,13 +19,9 @@ public class RedirectUri {
     @Column(name = "uri", nullable = false, length = 512)
     private String uri;
 
+    @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
-
-    @PrePersist
-    protected void onCreate() {
-        createdAt = Instant.now();
-    }
 
     // Getters and Setters
 

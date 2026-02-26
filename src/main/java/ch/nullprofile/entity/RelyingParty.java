@@ -1,6 +1,7 @@
 package ch.nullprofile.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.CreationTimestamp;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -36,16 +37,12 @@ public class RelyingParty {
     @Column(name = "plan_tier", nullable = false, length = 50)
     private String planTier = "FREE";
 
+    @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     @Column(name = "created_by_user_id", nullable = false)
     private UUID createdByUserId;
-
-    @PrePersist
-    protected void onCreate() {
-        createdAt = Instant.now();
-    }
 
     // Getters and Setters
 

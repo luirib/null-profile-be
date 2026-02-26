@@ -113,6 +113,92 @@ ch.nullprofile
     └── PublicController.java  # Example REST controller
 ```
 
+## Billing Setup (Stripe)
+
+The application includes Stripe billing integration for donations and future subscription support.
+
+### Prerequisites
+
+1. **Stripe Account**: Sign up at [https://stripe.com](https://stripe.com)
+2. **Stripe API Keys**: Get test keys from [https://dashboard.stripe.com/test/apikeys](https://dashboard.stripe.com/test/apikeys)
+3. **Webhook Secret**: Configure webhook endpoint in Stripe Dashboard
+
+### Configuration
+
+1. **Update environment variables** in `.env.local`:
+   ```bash
+   STRIPE_SECRET_KEY=sk_test_...
+   STRIPE_PUBLISHABLE_KEY=pk_test_...
+   STRIPE_WEBHOOK_SECRET=whsec_...
+   BILLING_MODE=donation
+   BILLING_CURRENCY=EUR
+   BILLING_SUCCESS_URL=http://localhost:8080/billing/success
+   BILLING_CANCEL_URL=http://localhost:8080/billing/cancel
+   ```
+
+2. **Configure Stripe Webhook** (for local development):
+   - Use [Stripe CLI](https://stripe.com/docs/stripe-cli) to forward webhooks:
+     ```bash
+     stripe listen --forward-to localhost:8080/api/billing/webhook
+     ```
+   - Copy the webhook signing secret (`whsec_...`) to `STRIPE_WEBHOOK_SECRET`
+
+3. **Restart application** to apply changes:
+   ```bash
+   docker compose down
+   docker compose up --build
+   ```
+
+### Billing Modes
+
+- **donation**: One-time donations via Stripe Checkout (default)
+- **subscription**: Recurring subscriptions (future support)
+- **disabled**: Billing completely disabled
+
+### API Endpoints
+
+- `POST /api/billing/donations/checkout-session` - Create donation checkout session
+  ```json
+  {
+    "userId": "uuid",
+    "amount": 500
+  }
+  ```
+  Response: `{ "url": "https://checkout.stripe.com/..." }`
+
+- `POST /api/billing/webhook` - Stripe webhook endpoint (for Stripe only)
+
+### Database Tables
+
+The billing module uses isolated tables in the `public` schema:
+- `billing_customers` - Maps users to Stripe customers
+- `billing_subscriptions` - Tracks subscriptions (future)
+- `billing_payments` - Records payment transactions
+- `billing_events` - Webhook event log for idempotency
+
+See migration `V4__billing_stripe_tables.sql` for complete schema.
+
+### Testing
+
+1. **Create test donation**:
+   ```bash
+   curl -X POST http://localhost:8080/api/billing/donations/checkout-session \
+     -H "Content-Type: application/json" \
+     -d '{"userId": "your-user-uuid", "amount": 1000}'
+   ```
+
+2. **Open returned checkout URL** in browser
+
+3. **Use Stripe test cards**:
+   - Success: `4242 4242 4242 4242`
+   - Decline: `4000 0000 0000 0002`
+   - [More test cards](https://stripe.com/docs/testing)
+
+4. **Verify webhook received**:
+   ```bash
+   docker compose logs -f backend | grep "webhook"
+   ```
+
 ## Database Migrations
 
 Flyway migrations should be placed in:
