@@ -62,10 +62,19 @@ public class WebAuthnController {
             @RequestBody RegistrationOptionsRequest request,
             HttpSession session) {
         
-        logger.info("Registration options requested, txn={}, displayName={}", request.txn(), request.displayName());
+        // Diagnostic logging for session tracking
+        logger.info("[REGISTRATION-OPTIONS] Request received - sessionId={}, isNewSession={}, txn={}, displayName={}",
+                session.getId(), session.isNew(), request.txn(), request.displayName());
+        
+        // Log session attributes for debugging
+        logger.debug("[REGISTRATION-OPTIONS] Session has {} attributes", 
+                session.getAttributeNames().asIterator().hasNext() ? "some" : "no");
 
         // Generate challenge
         String challenge = challengeService.generateAndStoreRegistrationChallenge(session, request.txn());
+        
+        logger.info("[REGISTRATION-OPTIONS] Challenge generated and stored - sessionId={}, challengeLength={}",
+                session.getId(), challenge.length());
         
         // Generate user handle
         String userHandle = challengeService.generateAndStoreUserHandle(session);
@@ -116,19 +125,34 @@ public class WebAuthnController {
             @RequestBody RegistrationVerifyRequest request,
             HttpSession session) {
         
-        logger.info("Registration verify requested, txn={}, credentialId={}", request.txn(), request.id());
+        // Diagnostic logging for session tracking
+        logger.info("[REGISTRATION-VERIFY] Request received - sessionId={}, isNewSession={}, txn={}, credentialId={}",
+                session.getId(), session.isNew(), request.txn(), request.id());
+        
+        // Log session state for debugging
+        boolean hasRegistrationChallenge = session.getAttribute("webauthn.regChallenge") != null;
+        boolean hasExpiresAt = session.getAttribute("webauthn.regChallengeExpiresAt") != null;
+        logger.info("[REGISTRATION-VERIFY] Session state - hasChallenge={}, hasExpiresAt={}, sessionAge={}ms",
+                hasRegistrationChallenge, hasExpiresAt, 
+                System.currentTimeMillis() - session.getCreationTime());
 
         try {
             // Extract challenge from clientDataJSON
             JsonNode clientData = objectMapper.readTree(Base64UrlUtil.decode(request.response().clientDataJSON()));
             String challenge = clientData.get("challenge").asText();
+            
+            logger.debug("[REGISTRATION-VERIFY] Extracted challenge from client - challengePrefix={}",
+                    challenge.length() > 8 ? challenge.substring(0, 8) + "..." : challenge);
 
             // Validate challenge
             if (!challengeService.validateAndConsumeRegistrationChallenge(session, challenge)) {
-                logger.warn("Invalid or expired registration challenge");
+                logger.warn("[REGISTRATION-VERIFY] Challenge validation FAILED - sessionId={}, isNewSession={}, hasStoredChallenge={}",
+                        session.getId(), session.isNew(), hasRegistrationChallenge);
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(WebAuthnResponse.error("challenge_expired", "Challenge is invalid or expired"));
+                        .body(WebAuthnResponse.error("challenge_expired", "Challenge is invalid or expired. This usually means the session was not maintained between requests. Check browser cookies and CORS configuration."));
             }
+            
+            logger.info("[REGISTRATION-VERIFY] Challenge validated successfully - sessionId={}", session.getId());
 
             // Verify and create user
             User user = verificationService.verifyRegistrationAndCreateUser(
