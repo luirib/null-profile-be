@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- 
+        Logback configuration with trace ID support for distributed debugging.
+        
+        Log Format includes:
+        - Timestamp
+        - Log level
+        - Thread name
+        - Logger name (abbreviated)
+        - Trace ID from MDC (for request correlation)
+        - Message
+        - Exception stack trace if present
+    -->
+    
+    <!-- Define property for log pattern -->
+    <property name="LOG_PATTERN" 
+              value="%d{yyyy-MM-dd'T'HH:mm:ss.SSS'Z', UTC} %5p [%-15.15t] %-40.40logger{39} [traceId=%X{traceId:-none}] : %m%n%xEx"/>
+
+    <!-- Console appender (used in both local and production) -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- Root logger level - defaults to INFO, can be overridden by LOG_LEVEL env var -->
+    <root level="${LOG_LEVEL:-INFO}">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <!-- Application-specific logger - defaults to INFO, can be overridden by APP_LOG_LEVEL env var -->
+    <logger name="ch.nullprofile" level="${APP_LOG_LEVEL:-INFO}" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <!-- Reduce noise from common libraries -->
+    <logger name="org.springframework.web" level="INFO"/>
+    <logger name="org.springframework.security" level="INFO"/>
+    <logger name="org.hibernate" level="WARN"/>
+    <logger name="com.hazelcast" level="WARN"/>
+    <logger name="org.postgresql" level="WARN"/>
+    <logger name="org.flywaydb" level="INFO"/>
+    
+    <!-- 
+        Trace ID correlation notes:
+        - %X{traceId} pulls from MDC (Mapped Diagnostic Context)
+        - TraceIdFilter populates MDC at request start
+        - Format: [traceId=abc-123-def] or [traceId=none] if not in request context
+        - This enables searching logs by trace ID for full request timeline
+    -->
+</configuration>

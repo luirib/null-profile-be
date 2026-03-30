@@ -1,6 +1,8 @@
 package ch.nullprofile.service;
 
 import ch.nullprofile.config.WebAuthnProperties;
+import ch.nullprofile.filter.TraceIdFilter;
+import ch.nullprofile.util.SensitiveDataMasker;
 import jakarta.servlet.http.HttpSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,86 +35,144 @@ public class ChallengeService {
      * Generate and store registration challenge
      */
     public String generateAndStoreRegistrationChallenge(HttpSession session, String txn) {
+        String traceId = TraceIdFilter.getCurrentTraceId();
+        String sessionIdMasked = SensitiveDataMasker.maskSessionId(session.getId());
+        
+        logger.info("[CHALLENGE-STORE] Generating new challenge - traceId={}, session={}", traceId, sessionIdMasked);
+        
         byte[] challengeBytes = new byte[32];
         secureRandom.nextBytes(challengeBytes);
         String challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(challengeBytes);
         
         Instant expiresAt = Instant.now().plusSeconds(properties.getChallenge().getTimeout());
         
-        logger.debug("[CHALLENGE-STORE] Storing registration challenge - sessionId={}, expiresAt={}, timeoutSeconds={}",
-                session.getId(), expiresAt, properties.getChallenge().getTimeout());
+        logger.info("[CHALLENGE-STORE] Challenge generated: length={}, expiresIn={}s, expiresAt={}", 
+            challenge.length(), properties.getChallenge().getTimeout(), expiresAt);
         
+        // Store in session
         session.setAttribute(ATTR_REG_CHALLENGE, challenge);
         session.setAttribute(ATTR_REG_CHALLENGE_EXPIRES_AT, expiresAt.toString());
         
+        logger.info("[CHALLENGE-STORE] Stored in session attributes: key={}, key={}", 
+            ATTR_REG_CHALLENGE, ATTR_REG_CHALLENGE_EXPIRES_AT);
+        
         if (txn != null) {
             session.setAttribute(ATTR_WEBAUTHN_TXN, txn);
-            logger.debug("[CHALLENGE-STORE] Stored txn={} in session", txn);
+            logger.info("[CHALLENGE-STORE] Stored OIDC txn={} in session", txn);
         }
         
-        // Verify storage immediately
-        String verified = (String) session.getAttribute(ATTR_REG_CHALLENGE);
-        logger.info("[CHALLENGE-STORE] Challenge stored and verified - sessionId={}, stored={}",
-                session.getId(), verified != null);
+        // Verify storage immediately (critical for debugging)
+        String verifiedChallenge = (String) session.getAttribute(ATTR_REG_CHALLENGE);
+        String verifiedExpiry = (String) session.getAttribute(ATTR_REG_CHALLENGE_EXPIRES_AT);
+        boolean stored = verifiedChallenge != null && verifiedExpiry != null;
+        
+        if (stored) {
+            logger.info("[CHALLENGE-STORE] ✓ Challenge verified in session immediately after storage");
+            logger.info("[CHALLENGE-STORE] Challenge prefix: {}", SensitiveDataMasker.maskChallenge(challenge));
+        } else {
+            logger.error("[CHALLENGE-STORE] ✗ VERIFICATION FAILED - challenge not found immediately after storage!");
+            logger.error("[CHALLENGE-STORE] This indicates a critical session storage issue");
+        }
         
         return challenge;
-    }
-
-    /**
-     * Generate and store user handle for registration
-     */
-    public String generateAndStoreUserHandle(HttpSession session) {
-        byte[] userHandleBytes = new byte[32];
-        secureRandom.nextBytes(userHandleBytes);
-        String userHandle = Base64.getUrlEncoder().withoutPadding().encodeToString(userHandleBytes);
-        
-        session.setAttribute(ATTR_REG_USER_HANDLE, userHandle);
-        return userHandle;
     }
 
     /**
      * Validate and consume registration challenge
      */
     public boolean validateAndConsumeRegistrationChallenge(HttpSession session, String challenge) {
-        logger.debug("[CHALLENGE-VALIDATE] Attempting to validate challenge - sessionId={}", session.getId());
+        String traceId = TraceIdFilter.getCurrentTraceId();
+        String sessionIdMasked = SensitiveDataMasker.maskSessionId(session.getId());
         
+        logger.info("[CHALLENGE-VALIDATE] Starting validation - traceId={}, session={}, challengePrefix={}", 
+            traceId, sessionIdMasked, SensitiveDataMasker.maskChallenge(challenge));
+        
+        // Retrieve stored challenge
         String storedChallenge = (String) session.getAttribute(ATTR_REG_CHALLENGE);
         String expiresAtStr = (String) session.getAttribute(ATTR_REG_CHALLENGE_EXPIRES_AT);
         
+        logger.info("[CHALLENGE-VALIDATE] Checking session for stored challenge:");
+        logger.info("[CHALLENGE-VALIDATE]   Session attribute '{}' present: {}", 
+            ATTR_REG_CHALLENGE, storedChallenge != null);
+        logger.info("[CHALLENGE-VALIDATE]   Session attribute '{}' present: {}", 
+            ATTR_REG_CHALLENGE_EXPIRES_AT, expiresAtStr != null);
+        
         if (storedChallenge == null || expiresAtStr == null) {
-            logger.warn("[CHALLENGE-VALIDATE] Challenge NOT FOUND in session - sessionId={}, hasChallenge={}, hasExpiresAt={}",
-                    session.getId(), storedChallenge != null, expiresAtStr != null);
-            logger.warn("[CHALLENGE-VALIDATE] This indicates session was not maintained between /options and /verify requests");
-            logger.warn("[CHALLENGE-VALIDATE] Check: 1) Browser is accepting session cookies, 2) CORS allows credentials, 3) SameSite cookie settings");
+            logger.error("[CHALLENGE-VALIDATE] ✗ CHALLENGE NOT FOUND IN SESSION");
+            logger.error("[CHALLENGE-VALIDATE] Trace ID: {}", traceId);
+            logger.error("[CHALLENGE-VALIDATE] Session: {}", sessionIdMasked);
+            logger.error("[CHALLENGE-VALIDATE] Session is new: {}", session.isNew());
+            logger.error("[CHALLENGE-VALIDATE] Session attributes present:");
+            session.getAttributeNames().asIterator().forEachRemaining(name -> 
+                logger.error("[CHALLENGE-VALIDATE]   - {}", name));
+            
+            logger.error("[CHALLENGE-VALIDATE] ========================================");
+            logger.error("[CHALLENGE-VALIDATE] ROOT CAUSE DIAGNOSIS:");
+            logger.error("[CHALLENGE-VALIDATE] Session was NOT maintained between OPTIONS and VERIFY requests");
+            logger.error("[CHALLENGE-VALIDATE] ========================================");
+            logger.error("[CHALLENGE-VALIDATE] Possible causes:");
+            logger.error("[CHALLENGE-VALIDATE] 1. Browser rejected session cookie:");
+            logger.error("[CHALLENGE-VALIDATE]    - SameSite=None requires Secure=true");
+            logger.error("[CHALLENGE-VALIDATE]    - Check SESSION_COOKIE_SAME_SITE={} in env", "None");
+            logger.error("[CHALLENGE-VALIDATE]    - Check SESSION_COOKIE_SECURE={} in env", "true");
+            logger.error("[CHALLENGE-VALIDATE] 2. CORS not allowing credentials:");
+            logger.error("[CHALLENGE-VALIDATE]    - Check allowCredentials=true in CORS config");
+            logger.error("[CHALLENGE-VALIDATE]    - Check CORS_ALLOWED_ORIGINS matches frontend");
+            logger.error("[CHALLENGE-VALIDATE] 3. Frontend not sending credentials:");
+            logger.error("[CHALLENGE-VALIDATE]    - Check fetch() uses 'credentials: include'");
+            logger.error("[CHALLENGE-VALIDATE] 4. Different domains without proper cookie config:");
+            logger.error("[CHALLENGE-VALIDATE]    - Frontend and backend must be on HTTPS in production");
+            logger.error("[CHALLENGE-VALIDATE]    - SameSite=None + Secure=true required for cross-domain");
+            logger.error("[CHALLENGE-VALIDATE] ========================================");
+            
             return false;
         }
         
-        logger.debug("[CHALLENGE-VALIDATE] Found stored challenge - sessionId={}", session.getId());
+        logger.info("[CHALLENGE-VALIDATE] ✓ Challenge found in session");
+        logger.info("[CHALLENGE-VALIDATE] Stored challenge prefix: {}", 
+            SensitiveDataMasker.maskChallenge(storedChallenge));
         
         // Check expiry
         Instant expiresAt = Instant.parse(expiresAtStr);
         Instant now = Instant.now();
+        
+        logger.info("[CHALLENGE-VALIDATE] Checking expiry:");
+        logger.info("[CHALLENGE-VALIDATE]   Now: {}", now);
+        logger.info("[CHALLENGE-VALIDATE]   Expires at: {}", expiresAt);
+        
         if (now.isAfter(expiresAt)) {
             long secondsExpired = now.getEpochSecond() - expiresAt.getEpochSecond();
-            logger.warn("[CHALLENGE-VALIDATE] Challenge EXPIRED - sessionId={}, expiredBySeconds={}",
-                    session.getId(), secondsExpired);
+            logger.error("[CHALLENGE-VALIDATE] ✗ CHALLENGE EXPIRED");
+            logger.error("[CHALLENGE-VALIDATE] Expired {} seconds ago", secondsExpired);
+            logger.error("[CHALLENGE-VALIDATE] Challenge timeout configured: {} seconds", 
+                properties.getChallenge().getTimeout());
+            logger.error("[CHALLENGE-VALIDATE] User took too long or clock mismatch");
             return false;
         }
         
         long secondsRemaining = expiresAt.getEpochSecond() - now.getEpochSecond();
-        logger.debug("[CHALLENGE-VALIDATE] Challenge not expired - secondsRemaining={}", secondsRemaining);
+        logger.info("[CHALLENGE-VALIDATE] ✓ Challenge not expired - {} seconds remaining", secondsRemaining);
         
         // Verify challenge matches
-        if (!storedChallenge.equals(challenge)) {
-            logger.warn("[CHALLENGE-VALIDATE] Challenge MISMATCH - sessionId={}", session.getId());
+        boolean matches = storedChallenge.equals(challenge);
+        logger.info("[CHALLENGE-VALIDATE] Comparing challenges: match={}", matches);
+        
+        if (!matches) {
+            logger.error("[CHALLENGE-VALIDATE] ✗ CHALLENGE MISMATCH");
+            logger.error("[CHALLENGE-VALIDATE] Received: {}", SensitiveDataMasker.maskChallenge(challenge));
+            logger.error("[CHALLENGE-VALIDATE] Expected: {}", SensitiveDataMasker.maskChallenge(storedChallenge));
+            logger.error("[CHALLENGE-VALIDATE] This should not happen if session was maintained correctly");
             return false;
         }
         
-        logger.info("[CHALLENGE-VALIDATE] Challenge validated successfully - sessionId={}", session.getId());
+        logger.info("[CHALLENGE-VALIDATE] ✓ Challenge matches stored value");
         
-        // Consume (remove) the challenge
+        // Consume (remove) the challenge to prevent replay
         session.removeAttribute(ATTR_REG_CHALLENGE);
         session.removeAttribute(ATTR_REG_CHALLENGE_EXPIRES_AT);
+        
+        logger.info("[CHALLENGE-VALIDATE] ✓ Challenge consumed (removed from session)");
+        logger.info("[CHALLENGE-VALIDATE] ✓✓✓ VALIDATION SUCCESSFUL ✓✓✓");
         
         return true;
     }
@@ -171,6 +231,16 @@ public class ChallengeService {
      */
     public String getRegistrationUserHandle(HttpSession session) {
         return (String) session.getAttribute(ATTR_REG_USER_HANDLE);
+    }
+
+    /**
+     * Generate and store user handle for registration
+     */
+    public String generateAndStoreUserHandle(HttpSession session) {
+        String userHandle = java.util.UUID.randomUUID().toString();
+        session.setAttribute(ATTR_REG_USER_HANDLE, userHandle);
+        logger.debug("Generated and stored user handle in session: {}", userHandle);
+        return userHandle;
     }
 
     /**

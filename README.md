@@ -2,9 +2,34 @@
 
 Spring Boot 3.2+ backend application with Java 21 and PostgreSQL.
 
+## 📋 Quick Links
+
+- **[Local Development Guide](#running-with-docker-compose)** - Docker Compose setup
+- **[Render Deployment Guide](DEPLOYMENT.md)** - Production deployment on Render
+- **[Render Environment Variables](RENDER_ENV_VARS.md)** - Quick copy-paste for Render
+
+## 🏗️ Architecture
+
+### Local Development
+```
+docker-compose.yml orchestrates:
+├── PostgreSQL (postgres:16-alpine)
+└── Backend (Spring Boot via Dockerfile)
+```
+
+### Production (Render)
+```
+Render manages:
+├── PostgreSQL (Managed Service)
+└── Backend (Single container from Dockerfile)
+    └── No docker-compose.yml used
+```
+
+**Important:** Render builds from Dockerfile only and gets all configuration from environment variables.
+
 ## Prerequisites
 
-- Docker Desktop with WSL 2 integration enabled
+- Docker Desktop with WSL 2 integration enabled (for local development)
 - Maven (for initial setup only)
 
 ## Initial Setup
@@ -18,15 +43,23 @@ cd /mnt/c/Users/luis.ribeiro/Documents/sources/null-profile/null-profile-be/null
 mvn wrapper:wrapper
 ```
 
-### 2. Configure Environment (Optional)
+### 2. Configure Environment
 
-Copy the example environment file and customize if needed:
+Copy the example environment file:
 
 ```bash
-cp .env.example .env
+cp .env.example .env.local
 ```
 
-Edit `.env` to change default values like database credentials, ports, etc.
+**Important:** For local development, ensure `.env.local` has:
+```bash
+DATABASE_URL=jdbc:postgresql://postgres:5432/profile
+SESSION_COOKIE_SAME_SITE=Lax
+SESSION_COOKIE_SECURE=false
+CORS_ALLOWED_ORIGINS=http://localhost:3000
+```
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for production configuration.
 
 ## Running with Docker Compose
 
@@ -84,12 +117,37 @@ docker compose logs -f postgres
 
 ```bash
 docker compose up --build
-```
+```Deployment
 
-### Accessing the Database
+### Local (Docker Compose)
+See [Running with Docker Compose](#running-with-docker-compose) above.
 
-```bash
-docker exec -it nullprofile-postgres psql -U profile_user -d profile
+### Production (Render)
+See [DEPLOYMENT.md](DEPLOYMENT.md) for complete deployment guide.
+
+**Quick checklist for Render:**
+1. Create PostgreSQL database service
+2. Create Web Service from Dockerfile
+3. Link database (provides `DATABASE_URL` automatically)
+4. Set environment variables from [RENDER_ENV_VARS.md](RENDER_ENV_VARS.md)
+5. **Critical:** Set `SESSION_COOKIE_SAME_SITE=None` and `SESSION_COOKIE_SECURE=true`
+
+## Configuration
+
+The application uses environment variables for all configuration.
+
+### Local Development (.env.local)
+- `DATABASE_URL=jdbc:postgresql://postgres:5432/profile` (Docker Compose service)
+- `SESSION_COOKIE_SAME_SITE=Lax` (localhost works with Lax)
+- `SESSION_COOKIE_SECURE=false` (no HTTPS needed locally)
+
+### Production (Render Environment Variables)
+- `DATABASE_URL=<provided-by-render>` (managed PostgreSQL)
+- `SESSION_COOKIE_SAME_SITE=None` (required for cross-domain)
+- `SESSION_COOKIE_SECURE=true` (required with SameSite=None)
+- `CORS_ALLOWED_ORIGINS=https://your-frontend.onrender.com`
+
+See [.env.example](.env.example) for all available options.file-postgres psql -U profile_user -d profile
 ```
 
 ## Configuration

@@ -4,6 +4,8 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+# AI Generated MD Files
+docs/
 # IDE
 .idea/
 *.iws
@@ -14,6 +16,7 @@ target/
 
 # Environment variables
 .env.local
+.env.render
 .env.*.local
 
 # Logs

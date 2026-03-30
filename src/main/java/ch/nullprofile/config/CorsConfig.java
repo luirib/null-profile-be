@@ -29,7 +29,15 @@ public class CorsConfig {
                     origins[i] = origins[i].trim();
                 }
                 
-                logger.info("Configuring CORS with allowed origins: {}", String.join(", ", origins));
+                logger.info("[CORS-CONFIG] ========================================");
+                logger.info("[CORS-CONFIG] Configuring CORS with allowed origins:");
+                for (String origin : origins) {
+                    logger.info("[CORS-CONFIG]   - {}", origin);
+                }
+                logger.info("[CORS-CONFIG] Methods: GET, POST, PUT, DELETE, OPTIONS");
+                logger.info("[CORS-CONFIG] Allow credentials: TRUE (required for session cookies)");
+                logger.info("[CORS-CONFIG] Max age: 3600 seconds");
+                logger.info("[CORS-CONFIG] ========================================");
                 
                 registry.addMapping("/**")
                         .allowedOrigins(origins)
@@ -37,6 +45,9 @@ public class CorsConfig {
                         .allowedHeaders("*")
                         .allowCredentials(true)
                         .maxAge(3600);
+                
+                logger.info("[CORS-CONFIG] CORS configuration complete");
+                logger.info("[CORS-CONFIG] Verify frontend origin matches one of the allowed origins above");
             }
         };
     }
