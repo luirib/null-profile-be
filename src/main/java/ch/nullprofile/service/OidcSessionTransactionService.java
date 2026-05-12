@@ -35,7 +35,13 @@ public class OidcSessionTransactionService {
     
     // Store authorization codes independently of sessions
     private final ConcurrentHashMap<String, AuthCodeEntry> authCodeStore = new ConcurrentHashMap<>();
-    
+
+    // Store transactions by txnId for session-independent branding lookup
+    // Needed because the branding request is cross-origin and may not carry the session cookie
+    private final ConcurrentHashMap<String, TxnCacheEntry> txnCache = new ConcurrentHashMap<>();
+
+    private static final int TXN_CACHE_TTL_SECONDS = 600; // 10 minutes
+
     /**
      * Entry for authorization code store
      */
@@ -44,6 +50,14 @@ public class OidcSessionTransactionService {
             OidcTransaction transaction,
             Instant expiresAt,
             boolean consumed
+    ) {}
+
+    /**
+     * Entry for transaction cache (branding lookup without session)
+     */
+    private record TxnCacheEntry(
+            OidcTransaction transaction,
+            Instant expiresAt
     ) {}
 
     public OidcSessionTransactionService(OidcProperties oidcProperties) {
@@ -76,8 +90,11 @@ public class OidcSessionTransactionService {
         );
 
         session.setAttribute(ATTR_OIDC_TXN, txn);
-        
-        logger.info("Created OIDC transaction: txnId={}, rpId={}, authnRequired={}", 
+
+        // Also cache by txnId for session-independent branding lookup
+        txnCache.put(txn.txnId(), new TxnCacheEntry(txn, Instant.now().plusSeconds(TXN_CACHE_TTL_SECONDS)));
+
+        logger.info("Created OIDC transaction: txnId={}, rpId={}, authnRequired={}",
                 txn.txnId(), rpId, authnRequired);
         
         return txn;
@@ -294,7 +311,25 @@ public class OidcSessionTransactionService {
     }
 
     /**
-     * Cleanup expired authorization codes
+     * Get transaction by txnId without requiring a session cookie.
+     * Used by the branding endpoint to support cross-origin requests.
+     */
+    public Optional<OidcTransaction> getTransactionByTxnId(String txnId) {
+        TxnCacheEntry entry = txnCache.get(txnId);
+        if (entry == null) {
+            logger.warn("txnId not found in cache: {}", txnId);
+            return Optional.empty();
+        }
+        if (Instant.now().isAfter(entry.expiresAt())) {
+            logger.warn("txnId cache entry expired: {}", txnId);
+            txnCache.remove(txnId);
+            return Optional.empty();
+        }
+        return Optional.of(entry.transaction());
+    }
+
+    /**
+     * Cleanup expired authorization codes and transaction cache entries.
      * Runs every minute
      */
     @Scheduled(fixedRate = 60000)
@@ -312,6 +347,18 @@ public class OidcSessionTransactionService {
         if (removed > 0) {
             logger.info("Cleaned up {} expired authorization codes", removed);
         }
+
+        int txnRemoved = 0;
+        for (var entry : txnCache.entrySet()) {
+            if (now.isAfter(entry.getValue().expiresAt())) {
+                txnCache.remove(entry.getKey());
+                txnRemoved++;
+            }
+        }
+
+        if (txnRemoved > 0) {
+            logger.info("Cleaned up {} expired transaction cache entries", txnRemoved);
+        }
     }
 
     /**
@@ -321,6 +368,8 @@ public class OidcSessionTransactionService {
     public void shutdown() {
         logger.info("Clearing {} authorization codes on shutdown", authCodeStore.size());
         authCodeStore.clear();
+        logger.info("Clearing {} transaction cache entries on shutdown", txnCache.size());
+        txnCache.clear();
     }
 
     /**

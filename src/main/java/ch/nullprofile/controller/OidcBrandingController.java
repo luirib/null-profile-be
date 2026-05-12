@@ -4,7 +4,6 @@ import ch.nullprofile.dto.OidcTransaction;
 import ch.nullprofile.entity.RelyingParty;
 import ch.nullprofile.repository.RelyingPartyRepository;
 import ch.nullprofile.service.OidcSessionTransactionService;
-import jakarta.servlet.http.HttpSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -38,28 +37,22 @@ public class OidcBrandingController {
     /**
      * Get branding information for an OIDC transaction
      * GET /api/oidc/branding?txn={txnId}
+     * Session-independent: looks up transaction by txnId from in-memory cache.
      */
     @GetMapping(value = "/branding", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, String>> getBranding(
-            @RequestParam(value = "txn", required = false) String txnId,
-            HttpSession session) {
+            @RequestParam(value = "txn") String txnId) {
 
         logger.info("Branding request: txnId={}", txnId);
 
-        // Get transaction from session
-        Optional<OidcTransaction> txnOpt = sessionService.getTransaction(session);
+        // Look up transaction by txnId (no session cookie required)
+        Optional<OidcTransaction> txnOpt = sessionService.getTransactionByTxnId(txnId);
         if (txnOpt.isEmpty()) {
-            logger.warn("No transaction in session for branding request");
+            logger.warn("Transaction not found in cache for branding request: txnId={}", txnId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
 
         OidcTransaction txn = txnOpt.get();
-
-        // Verify transaction ID matches (if provided)
-        if (txnId != null && !txnId.equals(txn.txnId())) {
-            logger.warn("Transaction ID mismatch: expected={}, provided={}", txn.txnId(), txnId);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        }
 
         // Get relying party by client_id (rpId)
         Optional<RelyingParty> rpOpt = relyingPartyRepository.findByRpId(txn.rpId());
