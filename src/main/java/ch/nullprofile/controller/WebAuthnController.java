@@ -297,6 +297,11 @@ public class WebAuthnController {
             sessionService.setAuthenticatedUserId(session, user.getId());
             logger.info("[REG-VERIFY] ✓ User authenticated in session");
 
+            // Also store in txnCache so /authorize/resume works across cross-origin sessions
+            if (request.txn() != null && !request.txn().isEmpty()) {
+                sessionService.setAuthenticatedUserIdForTxn(request.txn(), user.getId());
+            }
+
             // Cleanup registration session data
             challengeService.cleanupRegistrationSession(session);
 
@@ -417,7 +422,10 @@ public class WebAuthnController {
             // Set authenticated user in session
             sessionService.setAuthenticatedUserId(session, user.getId());
 
-            // Cleanup authentication session data
+            // Also store in txnCache so /authorize/resume works across cross-origin sessions
+            if (request.txn() != null && !request.txn().isEmpty()) {
+                sessionService.setAuthenticatedUserIdForTxn(request.txn(), user.getId());
+            }
             challengeService.cleanupAuthenticationSession(session);
 
             logger.info("Authentication successful for userId={}", user.getId());

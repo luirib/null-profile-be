@@ -53,12 +53,17 @@ public class OidcSessionTransactionService {
     ) {}
 
     /**
-     * Entry for transaction cache (branding lookup without session)
+     * Entry for transaction cache (branding + resume lookup without session)
      */
     private record TxnCacheEntry(
             OidcTransaction transaction,
-            Instant expiresAt
-    ) {}
+            Instant expiresAt,
+            UUID authenticatedUserId  // set after WebAuthn verify completes
+    ) {
+        TxnCacheEntry withAuthenticatedUserId(UUID userId) {
+            return new TxnCacheEntry(transaction, expiresAt, userId);
+        }
+    }
 
     public OidcSessionTransactionService(OidcProperties oidcProperties) {
         this.oidcProperties = oidcProperties;
@@ -92,7 +97,7 @@ public class OidcSessionTransactionService {
         session.setAttribute(ATTR_OIDC_TXN, txn);
 
         // Also cache by txnId for session-independent branding lookup
-        txnCache.put(txn.txnId(), new TxnCacheEntry(txn, Instant.now().plusSeconds(TXN_CACHE_TTL_SECONDS)));
+        txnCache.put(txn.txnId(), new TxnCacheEntry(txn, Instant.now().plusSeconds(TXN_CACHE_TTL_SECONDS), null));
 
         logger.info("Created OIDC transaction: txnId={}, rpId={}, authnRequired={}",
                 txn.txnId(), rpId, authnRequired);
@@ -308,6 +313,31 @@ public class OidcSessionTransactionService {
         }
 
         return valid;
+    }
+
+    /**
+     * Store the authenticated userId against a txnId.
+     * Called after WebAuthn verify so /authorize/resume can retrieve it without a session cookie.
+     */
+    public void setAuthenticatedUserIdForTxn(String txnId, UUID userId) {
+        TxnCacheEntry entry = txnCache.get(txnId);
+        if (entry != null) {
+            txnCache.put(txnId, entry.withAuthenticatedUserId(userId));
+            logger.info("Stored authenticated userId in txnCache: txnId={}, userId={}", txnId, userId);
+        } else {
+            logger.warn("Cannot store userId: txnId not found in cache: {}", txnId);
+        }
+    }
+
+    /**
+     * Get the authenticated userId stored against a txnId (session-independent).
+     */
+    public Optional<UUID> getAuthenticatedUserIdByTxnId(String txnId) {
+        TxnCacheEntry entry = txnCache.get(txnId);
+        if (entry == null || Instant.now().isAfter(entry.expiresAt())) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(entry.authenticatedUserId());
     }
 
     /**

@@ -165,11 +165,18 @@ public class OidcAuthorizationController {
 
         logger.info("Authorization resume requested: txnId={}", txnId);
 
-        // Check if user is authenticated
+        // Check if user is authenticated — fall back to txnCache if session doesn't carry USER_ID
+        // (cross-origin Railway: WebAuthn XHR uses a different session than the browser navigation)
         Optional<UUID> authenticatedUserId = sessionService.getAuthenticatedUserId(session);
+        if (authenticatedUserId.isEmpty() && txnId != null) {
+            authenticatedUserId = sessionService.getAuthenticatedUserIdByTxnId(txnId);
+            if (authenticatedUserId.isPresent()) {
+                logger.info("Resolved authenticated userId from txnCache (cross-origin session): txnId={}, userId={}",
+                        txnId, authenticatedUserId.get());
+            }
+        }
         if (authenticatedUserId.isEmpty()) {
-            logger.warn("Resume requested but session not authenticated");
-            // Redirect back to login
+            logger.warn("Resume requested but session not authenticated and no userId in txnCache");
             String loginUrl = frontendOrigin + "/oidc/login";
             if (txnId != null) {
                 loginUrl += "?txn=" + txnId;
