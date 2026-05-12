@@ -98,7 +98,9 @@ public class OidcTokenController {
         // Generate ID token with nonce from transaction
         String idToken = jwtService.generateIdToken(sub, clientId, txn.nonce());
 
-        return ResponseEntity.ok(new TokenResponse(idToken));
+        TokenResponse tokenResponse = new TokenResponse(idToken);
+        tokenResponse.setExpiresIn(jwtService.getTokenExpirySeconds());
+        return ResponseEntity.ok(tokenResponse);
     }
 
     private ResponseEntity<OidcErrorResponse> errorResponse(

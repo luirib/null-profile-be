@@ -11,7 +11,7 @@ public class TokenResponse {
     private String tokenType = "Bearer";
     
     @JsonProperty("expires_in")
-    private int expiresIn = 3600;
+    private int expiresIn;
 
     public TokenResponse() {
     }

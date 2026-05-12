@@ -45,6 +45,7 @@ cors:
 # Development (localhost): SameSite=Lax works
 # Production (HTTPS required): SameSite=None with Secure=true
 session:
+  timeout: ${SESSION_TIMEOUT:1800}
   cookie:
     same-site: ${SESSION_COOKIE_SAME_SITE:Lax}
     secure: ${SESSION_COOKIE_SECURE:false}
@@ -67,6 +68,8 @@ logging:
 # OIDC Provider Configuration
 oidc:
   issuer: ${OIDC_ISSUER:http://localhost:8080}
+  token:
+    expiry-seconds: ${OIDC_TOKEN_EXPIRY:3600}
   security:
     # Allow http://localhost redirect URIs for development
     # Set to false in production to enforce https-only (except localhost)

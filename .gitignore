@@ -17,6 +17,7 @@ docs/
 # Environment variables
 .env.local
 .env.render
+.env.railway
 .env.*.local
 
 # Logs

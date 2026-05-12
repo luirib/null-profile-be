@@ -10,9 +10,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.session.config.SessionRepositoryCustomizer;
+import org.springframework.session.hazelcast.HazelcastIndexedSessionRepository;
 import org.springframework.session.hazelcast.config.annotation.web.http.EnableHazelcastHttpSession;
 import org.springframework.session.web.http.CookieSerializer;
 import org.springframework.session.web.http.DefaultCookieSerializer;
+
+import java.time.Duration;
 
 /**
  * Session configuration using Hazelcast as distributed session store.
@@ -28,7 +32,7 @@ import org.springframework.session.web.http.DefaultCookieSerializer;
  * DO NOT switch to JDBC session storage - keep Hazelcast!
  */
 @Configuration
-@EnableHazelcastHttpSession(maxInactiveIntervalInSeconds = 1800) // 30 minutes
+@EnableHazelcastHttpSession
 public class SessionConfig {
 
     private static final Logger logger = LoggerFactory.getLogger(SessionConfig.class);
@@ -38,6 +42,9 @@ public class SessionConfig {
 
     @Value("${session.cookie.secure:false}")
     private boolean cookieSecure;
+
+    @Value("${session.timeout:1800}")
+    private int sessionTimeoutSeconds;
 
     /**
      * Creates HazelcastInstance bean for Spring Session.
@@ -175,5 +182,17 @@ public class SessionConfig {
         logger.info("[SESSION-COOKIE] Configuration complete");
         
         return serializer;
+    }
+
+    /**
+     * Overrides the session max-inactive interval at runtime using the configured value.
+     * This allows SESSION_TIMEOUT env var to take effect without recompilation.
+     */
+    @Bean
+    public SessionRepositoryCustomizer<HazelcastIndexedSessionRepository> sessionRepositoryCustomizer() {
+        return repository -> {
+            repository.setDefaultMaxInactiveInterval(Duration.ofSeconds(sessionTimeoutSeconds));
+            logger.info("[SESSION] Max inactive interval set to {} seconds (from SESSION_TIMEOUT env var)", sessionTimeoutSeconds);
+        };
     }
 }

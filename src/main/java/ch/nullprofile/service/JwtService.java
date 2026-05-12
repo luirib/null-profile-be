@@ -27,6 +27,9 @@ public class JwtService {
     @Value("${oidc.issuer}")
     private String issuer;
 
+    @Value("${oidc.token.expiry-seconds:3600}")
+    private int tokenExpirySeconds;
+
     private RSAKey rsaKey;
     private RSASSASigner signer;
 
@@ -57,7 +60,7 @@ public class JwtService {
     public String generateIdToken(String sub, String audience, String nonce) {
         try {
             Instant now = Instant.now();
-            Instant expiry = now.plusSeconds(3600); // 1 hour
+            Instant expiry = now.plusSeconds(tokenExpirySeconds);
 
             JWTClaimsSet claims = new JWTClaimsSet.Builder()
                     .issuer(issuer)
@@ -86,5 +89,12 @@ public class JwtService {
      */
     public JWK getPublicJwk() {
         return rsaKey.toPublicJWK();
+    }
+
+    /**
+     * Get configured token expiry in seconds
+     */
+    public int getTokenExpirySeconds() {
+        return tokenExpirySeconds;
     }
 }
