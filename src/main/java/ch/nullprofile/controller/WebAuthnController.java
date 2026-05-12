@@ -303,17 +303,19 @@ public class WebAuthnController {
             logger.info("[REG-VERIFY] ✓ Registration successful for userId={}", user.getId());
 
             // Check if there's an OIDC transaction to continue
-            // Only redirect if this registration was initiated for an OIDC flow (txn provided)
-            var txn = sessionService.getTransaction(session);
+            // Use txnId-based cache lookup (session-independent) to support cross-origin Railway flows
+            var oidcTxnForRedirect = (request.txn() != null && !request.txn().isEmpty())
+                    ? sessionService.getTransactionByTxnId(request.txn()).orElse(null)
+                    : null;
             logger.info("[REG-VERIFY] Checking OIDC transaction: present={}, authenticated={}, requestTxn={}", 
-                    txn.isPresent(), sessionService.isAuthenticated(session), request.txn());
+                    oidcTxnForRedirect != null, sessionService.isAuthenticated(session), request.txn());
             
             // Only redirect to OIDC flow if the registration was initiated WITH a txn parameter
             // This prevents redirecting to stale OIDC transactions from other tabs
-            if (sessionService.isAuthenticated(session) && txn.isPresent() && request.txn() != null && !request.txn().isEmpty()) {
+            if (sessionService.isAuthenticated(session) && oidcTxnForRedirect != null) {
                 logger.info("[REG-VERIFY] OIDC transaction found, redirecting to /authorize/resume: txnId={}", 
-                        txn.get().txnId());
-                String resumeUrl = issuer + "/authorize/resume";
+                        oidcTxnForRedirect.txnId());
+                String resumeUrl = issuer + "/authorize/resume?txn=" + request.txn();
                 logger.info("[REG-VERIFY] ✓ Returning redirect URL: {}", resumeUrl);
                 logger.info("[REG-VERIFY] ========== END (SUCCESS WITH REDIRECT) ==========");
                 return ResponseEntity.ok(WebAuthnResponse.successWithRedirect(resumeUrl));
@@ -421,17 +423,19 @@ public class WebAuthnController {
             logger.info("Authentication successful for userId={}", user.getId());
 
             // Check if there's an OIDC transaction to continue
-            // Only redirect if this authentication was initiated for an OIDC flow (txn provided)
-            var txn = sessionService.getTransaction(session);
+            // Use txnId-based cache lookup (session-independent) to support cross-origin Railway flows
+            var oidcTxnForRedirect = (request.txn() != null && !request.txn().isEmpty())
+                    ? sessionService.getTransactionByTxnId(request.txn()).orElse(null)
+                    : null;
             logger.info("Checking for OIDC transaction: present={}, authenticated={}, requestTxn={}", 
-                    txn.isPresent(), sessionService.isAuthenticated(session), request.txn());
+                    oidcTxnForRedirect != null, sessionService.isAuthenticated(session), request.txn());
             
             // Only redirect to OIDC flow if the authentication was initiated WITH a txn parameter
             // This prevents redirecting to stale OIDC transactions from other tabs
-            if (sessionService.isAuthenticated(session) && txn.isPresent() && request.txn() != null && !request.txn().isEmpty()) {
+            if (sessionService.isAuthenticated(session) && oidcTxnForRedirect != null) {
                 logger.info("OIDC transaction found and authentication initiated with txn, redirecting to /authorize/resume: txnId={}", 
-                        txn.get().txnId());
-                String resumeUrl = issuer + "/authorize/resume";
+                        oidcTxnForRedirect.txnId());
+                String resumeUrl = issuer + "/authorize/resume?txn=" + request.txn();
                 logger.info("Returning redirect URL: {}", resumeUrl);
                 return ResponseEntity.ok(WebAuthnResponse.successWithRedirect(resumeUrl));
             }

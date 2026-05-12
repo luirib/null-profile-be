@@ -177,11 +177,16 @@ public class OidcAuthorizationController {
             return new RedirectView(loginUrl);
         }
 
-        // Get transaction from session
+        // Get transaction from session, falling back to txnId cache for cross-origin Railway flows
         Optional<OidcTransaction> txnOpt = sessionService.getTransaction(session);
+        if (txnOpt.isEmpty() && txnId != null) {
+            txnOpt = sessionService.getTransactionByTxnId(txnId);
+            // Load into session so subsequent session-based calls (authenticateTransaction, generateAndStoreAuthCode) work
+            txnOpt.ifPresent(t -> sessionService.updateTransaction(session, t));
+        }
         if (txnOpt.isEmpty()) {
-            logger.error("Resume requested but no transaction in session");
-            return handleServerError("No authorization request in session", null);
+            logger.error("Resume requested but no transaction in session or cache");
+            return handleServerError("No authorization request found", null);
         }
 
         OidcTransaction txn = txnOpt.get();
