@@ -1,6 +1,7 @@
 package ch.nullprofile.service;
 
 import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.RSASSASigner;
@@ -27,8 +28,11 @@ public class JwtService {
     @Value("${oidc.issuer}")
     private String issuer;
 
-    @Value("${oidc.token.expiry-seconds:3600}")
-    private int tokenExpirySeconds;
+    @Value("${oidc.token.id-token-ttl-seconds:3600}")
+    private int idTokenTtlSeconds;
+
+    @Value("${oidc.token.access-token-ttl-seconds:1800}")
+    private int accessTokenTtlSeconds;
 
     private RSAKey rsaKey;
     private RSASSASigner signer;
@@ -55,12 +59,12 @@ public class JwtService {
     }
 
     /**
-     * Generate ID token
+     * Generate ID token. Lifetime is controlled by {@code oidc.token.id-token-ttl-seconds}.
      */
     public String generateIdToken(String sub, String audience, String nonce) {
         try {
             Instant now = Instant.now();
-            Instant expiry = now.plusSeconds(tokenExpirySeconds);
+            Instant expiry = now.plusSeconds(idTokenTtlSeconds);
 
             JWTClaimsSet claims = new JWTClaimsSet.Builder()
                     .issuer(issuer)
@@ -85,6 +89,41 @@ public class JwtService {
     }
 
     /**
+     * Generate access token (RFC 9068 JWT). Lifetime is controlled by
+     * {@code oidc.token.access-token-ttl-seconds}.
+     * Contains only minimal OAuth 2.0 claims — no user profile data.
+     */
+    public String generateAccessToken(String sub, String clientId) {
+        try {
+            Instant now = Instant.now();
+            Instant expiry = now.plusSeconds(accessTokenTtlSeconds);
+
+            JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                    .issuer(issuer)
+                    .subject(sub)
+                    .audience(clientId)
+                    .issueTime(Date.from(now))
+                    .expirationTime(Date.from(expiry))
+                    .claim("scope", "openid")
+                    .claim("client_id", clientId)
+                    .jwtID(UUID.randomUUID().toString())
+                    .build();
+
+            JWSHeader header = new JWSHeader.Builder(JWSAlgorithm.RS256)
+                    .keyID(rsaKey.getKeyID())
+                    .type(new JOSEObjectType("at+jwt"))
+                    .build();
+
+            SignedJWT signedJWT = new SignedJWT(header, claims);
+            signedJWT.sign(signer);
+
+            return signedJWT.serialize();
+        } catch (JOSEException e) {
+            throw new RuntimeException("Failed to generate access token", e);
+        }
+    }
+
+    /**
      * Get public JWK for JWKS endpoint
      */
     public JWK getPublicJwk() {
@@ -92,9 +131,9 @@ public class JwtService {
     }
 
     /**
-     * Get configured token expiry in seconds
+     * Access token lifetime in seconds; used as {@code expires_in} in the token response.
      */
-    public int getTokenExpirySeconds() {
-        return tokenExpirySeconds;
+    public int getAccessTokenTtlSeconds() {
+        return accessTokenTtlSeconds;
     }
 }

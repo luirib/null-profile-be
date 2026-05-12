@@ -24,6 +24,11 @@ spring:
     baseline-on-migrate: false
     locations: classpath:db/migration
 
+# CORS Configuration (test values)
+cors:
+  allowed:
+    origins: http://localhost:5173
+
 # OIDC Provider Configuration (test values)
 oidc:
   issuer: http://localhost:8080

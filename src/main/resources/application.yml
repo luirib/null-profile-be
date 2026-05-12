@@ -69,7 +69,10 @@ logging:
 oidc:
   issuer: ${OIDC_ISSUER:http://localhost:8080}
   token:
-    expiry-seconds: ${OIDC_TOKEN_EXPIRY:3600}
+    # ID token lifetime (default: 3600s / 1 hour). Separate from session TTL (30m) and auth code TTL (5m).
+    id-token-ttl-seconds: ${OIDC_ID_TOKEN_TTL_SECONDS:3600}
+    # Access token lifetime (default: 1800s / 30m). Drives expires_in in the token response.
+    access-token-ttl-seconds: ${OIDC_ACCESS_TOKEN_TTL_SECONDS:1800}
   security:
     # Allow http://localhost redirect URIs for development
     # Set to false in production to enforce https-only (except localhost)

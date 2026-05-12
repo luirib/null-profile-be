@@ -4,6 +4,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class TokenResponse {
     
+    @JsonProperty("access_token")
+    private String accessToken;
+
     @JsonProperty("id_token")
     private String idToken;
     
@@ -16,11 +19,20 @@ public class TokenResponse {
     public TokenResponse() {
     }
 
-    public TokenResponse(String idToken) {
+    public TokenResponse(String accessToken, String idToken) {
+        this.accessToken = accessToken;
         this.idToken = idToken;
     }
 
     // Getters and Setters
+
+    public String getAccessToken() {
+        return accessToken;
+    }
+
+    public void setAccessToken(String accessToken) {
+        this.accessToken = accessToken;
+    }
 
     public String getIdToken() {
         return idToken;

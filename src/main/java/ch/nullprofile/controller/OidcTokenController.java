@@ -98,8 +98,11 @@ public class OidcTokenController {
         // Generate ID token with nonce from transaction
         String idToken = jwtService.generateIdToken(sub, clientId, txn.nonce());
 
-        TokenResponse tokenResponse = new TokenResponse(idToken);
-        tokenResponse.setExpiresIn(jwtService.getTokenExpirySeconds());
+        // Generate access token (RFC 9068 JWT)
+        String accessToken = jwtService.generateAccessToken(sub, clientId);
+
+        TokenResponse tokenResponse = new TokenResponse(accessToken, idToken);
+        tokenResponse.setExpiresIn(jwtService.getAccessTokenTtlSeconds());
         return ResponseEntity.ok(tokenResponse);
     }
 
